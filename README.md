@@ -1,28 +1,54 @@
-# Peluquería: turnos, precios y panel admin
+# Peluquería y Barbería: turnos, precios y panel admin (con Neon)
 
-Un solo proyecto: la web (React + Vite) y la API (`/api`) viven juntas.
+## 1. Variables de entorno
+Copiá `.env.example` como `.env` (en la raíz, junto a `package.json`) y completalo:
+- `DATABASE_URL`: cadena de conexión de Neon (botón **Connect**, con *Connection pooling* activado).
+- `ADMIN_PASSWORD`: la contraseña del panel.
+- `ADMIN_SECRET`: una clave larga cualquiera, para firmar la sesión del admin.
 
-```
-peluqueria/
-├─ index.html, vite.config.js, vercel.json, package.json
-├─ src/        → la web (components, css, js)
-├─ api/        → entrada de la API para Vercel
-└─ server/     → lógica del servidor (rutas, guardado de datos)
-```
+El `.env` está en el `.gitignore`: no se sube a GitHub.
 
-## Correrlo en tu compu (1 comando)
+- `MAIL_USER`, `MAIL_PASS` y `MAIL_NOMBRE`: para el correo de confirmación de turnos (ver sección 1b).
+
+## 1b. Correo de confirmación (Gmail)
+1. En la cuenta de Gmail que va a enviar los mails, activá la **verificación en 2 pasos**.
+2. Entrá a https://myaccount.google.com/apppasswords y creá una **contraseña de aplicación** (16 letras).
+3. En el `.env` (y en Vercel → Environment Variables): `MAIL_USER=tucorreo@gmail.com`, `MAIL_PASS=` esa contraseña sin espacios, `MAIL_NOMBRE=Nombre de tu peluquería`.
+4. Corré `npm install` (se agregó `nodemailer`).
+
+Sin estas variables la reserva funciona igual, pero no se manda el correo y en pantalla se avisa.
+
+## 1c. Cobrar la seña con Mercado Pago
+1. Entrá a https://www.mercadopago.com.ar/developers con **la cuenta de Mercado Pago donde querés recibir los pagos** (la de la peluquería).
+2. *Tus integraciones → Crear aplicación* → producto **Checkout Pro**.
+3. En *Credenciales de producción* copiá el **Access Token** y cargalo como `MP_ACCESS_TOKEN` (en `.env` y en Vercel).
+4. En Vercel cargá `BASE_URL` con la dirección real de la página (ej. `https://tu-sitio.vercel.app`).
+5. En el admin → *Datos del local* elegí el **% de seña** (0 = no cobrar).
+Para probar sin plata real, usá las credenciales de prueba y usuarios de prueba de Mercado Pago.
+El turno queda "pendiente" 15 minutos hasta que se paga; si no paga, el horario se libera solo.
+En tu compu el aviso automático (webhook) no llega, pero al volver de Mercado Pago el sitio confirma el pago igual.
+
+## 2. Correrlo en tu compu (2 terminales)
 ```bash
 npm install
+
+# Terminal 1: servidor
+npm run server
+
+# Terminal 2: página
 npm run dev
 ```
-Abrí http://localhost:5173 — el panel está en http://localhost:5173/#/admin
-Contraseña por defecto: `admin1234`. Localmente los datos quedan en `data/db.json`.
+Abrí http://localhost:5173. Las tablas se crean solas en el primer pedido. Si querés crearlas antes: `npm run db:init`.
 
-## Subirlo a Vercel
-1. Subí esta carpeta a GitHub (la raíz del repo debe ser donde está `package.json`).
-2. En Vercel: **Add New → Project** → elegí el repo. Framework: Vite (lo detecta solo). No cambies nada más.
-3. Antes de usarlo, en el proyecto de Vercel: **Storage → Create Database → Upstash Redis** (plan gratis) y conectalo al proyecto. Esto guarda turnos, precios y fotos.
-4. En **Settings → Environment Variables** agregá `ADMIN_PASSWORD` con tu clave.
-5. **Deployments → Redeploy** para que tome las variables.
+## 3. Panel admin
+http://localhost:5173/#/admin: cortes (precio, duración y foto), peluqueros, horarios, WhatsApp, Instagram, dirección, fondo claro/oscuro, turnos.
 
-Sin el paso 3, la web carga pero los cambios del panel y los turnos no se guardan (Vercel no permite escribir archivos).
+## 4. Publicarlo en Vercel
+En el proyecto de Vercel, **Settings → Environment Variables**:
+- `DATABASE_URL`: la crea sola la integración con Neon.
+- `ADMIN_PASSWORD` y `ADMIN_SECRET`: cargalas vos. Sin `ADMIN_PASSWORD`, el panel no deja entrar.
+
+Después subí los cambios a GitHub (o hacé **Redeploy**).
+
+## Qué guarda la base
+Datos del local, peluqueros, cortes, fotos de los cortes y turnos. Los turnos se reservan dentro de una transacción: si dos personas piden el mismo horario con el mismo peluquero, se confirma solo la primera.

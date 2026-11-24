@@ -1,6 +1,6 @@
 import { estadoLocal } from "../js/format.js";
 
-export default function Header({ n, servicios }) {
+export default function Header({ n, servicios, sesion, onSalir }) {
   const estado = estadoLocal(n.bloques, n.diasCerrados);
   const cinta = [...servicios, ...servicios];
 
@@ -12,6 +12,11 @@ export default function Header({ n, servicios }) {
           <a href="#servicios">Precios</a>
           <a href="#turnos">Turnos</a>
           <a href="#contacto">Contacto</a>
+          {sesion && (
+            <span className="nav__user">
+              {sesion.usuario.nombre.split(" ")[0]} · <button type="button" onClick={onSalir}>Salir</button>
+            </span>
+          )}
         </div>
       </nav>
 

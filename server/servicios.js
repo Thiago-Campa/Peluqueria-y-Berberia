@@ -1,5 +1,5 @@
-// Precios en pesos argentinos (estimados) y duración en minutos (múltiplos de 30).
-// Después podés editarlos desde el panel admin.
+// Cortes iniciales (precios en pesos argentinos, duración en minutos múltiplos de 30).
+// Solo se cargan la primera vez que se crea la base. Después se editan desde /#/admin.
 export const servicios = [
   { id: "degrade", nombre: "Degradé", precio: 12000, duracion: 30, desc: "Fade a máquina con terminación prolija" },
   { id: "degrade-tijera", nombre: "Degradé + tijera", precio: 14000, duracion: 60, desc: "Laterales degradé y parte de arriba a tijera" },

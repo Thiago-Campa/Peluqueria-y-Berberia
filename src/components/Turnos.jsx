@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { crearTurno, getOcupados } from "../js/api.js";
+import { crearTurno, getOcupados, confirmarPago } from "../js/api.js";
+import Acceso from "./Acceso.jsx";
 import { peso, fechaCorta, aMin, generarSlots, nombreCompleto } from "../js/format.js";
 
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en hora local
-const vacio = { nombre: "", telefono: "", fecha: "", hora: "", peluqueroId: "" };
+const vacio = { fecha: "", hora: "", peluqueroId: "" };
 
-function Ticket({ n, servicio, duracion, peluquero, fecha, hora, precio, sello }) {
+function Ticket({ n, servicio, duracion, peluquero, fecha, hora, precio, sello, sena }) {
   return (
     <aside className="ticket" aria-live="polite">
       <p className="ticket__marca">{n.nombre}</p>
@@ -18,22 +19,44 @@ function Ticket({ n, servicio, duracion, peluquero, fecha, hora, precio, sello }
       </dl>
       <div className="ticket__corte" />
       <p className="ticket__total"><span>Total</span><strong>{precio ? peso(precio) : "—"}</strong></p>
+      {sena > 0 && <p className="ticket__total ticket__sena"><span>Seña a pagar ahora</span><strong>{peso(sena)}</strong></p>}
       {sello && <span className="sello">RESERVADO</span>}
     </aside>
   );
 }
 
-export default function Turnos({ n, servicios, elegido, setElegido }) {
+export default function Turnos({ n, servicios, elegido, setElegido, sesion, onSesion, onSalir }) {
   const [form, setForm] = useState(vacio);
   const [ocupados, setOcupados] = useState([]);
   const [aviso, setAviso] = useState(null);
   const [turno, setTurno] = useState(null);
+  const [yendo, setYendo] = useState(false);
 
   const servicio = servicios.find((s) => s.id === elegido);
   const pelu = n.peluqueros.find((p) => p.id === form.peluqueroId);
   const otro = n.peluqueros.find((p) => p.id !== form.peluqueroId);
   const dur = servicio?.duracion || 30;
   const paso = n.intervalo || 30;
+
+  const senaAhora = n.pagos && n.sena > 0 && servicio ? Math.round((servicio.precio * n.sena) / 100) : 0;
+
+  // Al volver de Mercado Pago se confirma el pago y se muestra el ticket
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const pago = q.get("pago");
+    if (!pago) return;
+    const pid = q.get("payment_id") || q.get("collection_id");
+    window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+    document.getElementById("turnos")?.scrollIntoView();
+    if (pago !== "ok" || !pid) {
+      setAviso({ tipo: "error", texto: pago === "pendiente" ? "Tu pago está pendiente. Cuando se acredite te llega el correo con tu turno." : "El pago no se completó, así que el turno no se reservó. Podés intentar de nuevo." });
+      return;
+    }
+    if (!sesion) return setAviso({ tipo: "ok", texto: "Recibimos tu pago. En unos minutos te llega el correo con tu turno confirmado." });
+    confirmarPago(pid, sesion.token)
+      .then(setTurno)
+      .catch((err) => setAviso({ tipo: err.status === 402 ? "ok" : "error", texto: err.message }));
+  }, []);
 
   const cambiar = (e) => setForm({ ...form, [e.target.name]: e.target.value });
   const cargar = (fecha) => getOcupados(fecha).then(setOcupados).catch(() => setOcupados([]));
@@ -64,10 +87,18 @@ export default function Turnos({ n, servicios, elegido, setElegido }) {
     if (!servicio || !pelu || !form.hora)
       return setAviso({ tipo: "error", texto: "Elegí servicio, peluquero, fecha y horario." });
     try {
-      setTurno(await crearTurno({ ...form, servicioId: servicio.id }));
+      const r = await crearTurno({ ...form, servicioId: servicio.id }, sesion.token);
+      if (r.pagoUrl) { // hay seña: se sigue en Mercado Pago
+        setYendo(true);
+        setAviso({ tipo: "ok", texto: `Te llevamos a Mercado Pago para pagar la seña de ${peso(r.sena)}. El horario te queda guardado 15 minutos.` });
+        window.location.href = r.pagoUrl;
+        return;
+      }
+      setTurno(r);
       setForm(vacio); setElegido(""); setAviso(null);
     } catch (err) {
       // Si alguien reservó antes, el turno no se confirma y se actualiza la grilla
+      if (err.status === 401) onSalir();
       setAviso({ tipo: "error", texto: err.message });
       setForm((f) => ({ ...f, hora: "" }));
       cargar(form.fecha);
@@ -82,6 +113,12 @@ export default function Turnos({ n, servicios, elegido, setElegido }) {
           <div>
             <h2 className="title">Turno reservado</h2>
             <p className="aviso aviso--ok">Te esperamos, {turno.nombre}. Guardá este ticket o avisanos por WhatsApp.</p>
+            {turno.sena > 0 && <p className="aviso aviso--ok">Seña pagada: {peso(turno.sena)}. El resto ({peso(turno.precio - turno.sena)}) lo abonás en el local.</p>}
+            <p className={`aviso aviso--${turno.correo !== false ? "ok" : "error"}`}>
+              {turno.correo !== false
+                ? `Te enviamos la confirmación a ${turno.email}. Si no la ves, revisá la carpeta de spam.`
+                : "Tu turno quedó reservado, pero no pudimos enviarte el correo de confirmación. Guardá este ticket."}
+            </p>
             <div className="acciones">
               <a className="btn" href={`https://wa.me/${n.whatsapp}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">Avisar por WhatsApp</a>
               <button className="btn btn--ghost" onClick={() => setTurno(null)}>Reservar otro turno</button>
@@ -107,13 +144,11 @@ export default function Turnos({ n, servicios, elegido, setElegido }) {
         <h2 className="title">Pedí tu turno</h2>
         <p className="lead">Elegí el corte, el peluquero y el día. Los turnos son de {paso} minutos.</p>
         <div className="reserva">
+          {!sesion ? <Acceso onListo={onSesion} /> : (
           <form className="form" onSubmit={enviar}>
-            <label>Nombre
-              <input name="nombre" value={form.nombre} onChange={cambiar} autoComplete="name" required />
-            </label>
-            <label>Teléfono
-              <input name="telefono" type="tel" value={form.telefono} onChange={cambiar} autoComplete="tel" required />
-            </label>
+            <p className="sesion full">
+              Reservando como <strong>{sesion.usuario.nombre}</strong> ({sesion.usuario.email}) · <button type="button" onClick={onSalir}>No soy yo</button>
+            </p>
             <label>Servicio
               <select value={elegido} onChange={(e) => setElegido(e.target.value)} required>
                 <option value="">Elegí un servicio</option>
@@ -166,9 +201,10 @@ export default function Turnos({ n, servicios, elegido, setElegido }) {
             </div>
 
             {aviso && <p className={`aviso aviso--${aviso.tipo} full`}>{aviso.texto}</p>}
-            <button className="btn full">Confirmar turno</button>
+            <button className="btn full" disabled={yendo}>{yendo ? "Abriendo Mercado Pago…" : senaAhora ? `Pagar seña de ${peso(senaAhora)} y reservar` : "Confirmar turno"}</button>
           </form>
-          <Ticket n={n} servicio={servicio?.nombre} duracion={servicio?.duracion} peluquero={pelu && nombreCompleto(pelu)} fecha={form.fecha} hora={form.hora} precio={servicio?.precio} />
+          )}
+          <Ticket n={n} servicio={servicio?.nombre} duracion={servicio?.duracion} peluquero={pelu && nombreCompleto(pelu)} fecha={form.fecha} hora={form.hora} precio={servicio?.precio} sena={senaAhora} />
         </div>
       </div>
     </section>

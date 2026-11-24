@@ -10,10 +10,7 @@ export default function Servicios({ servicios, error, onReservar }) {
         <ul className="menu">
           {servicios.map((s) => (
             <li key={s.id} className="plato">
-              <div className="plato__foto">
-                {s.foto ? <img src={s.foto} alt={s.nombre} loading="lazy" /> : <span className="plato__vacio" aria-hidden="true">✂</span>}
-                <span className="sello-precio">{peso(s.precio)}</span>
-              </div>
+              <span className="sello-precio">{peso(s.precio)}</span>
               <h3>{s.nombre}</h3>
               {s.desc && <p>{s.desc}</p>}
               <span className="plato__min">{s.duracion} min</span>
