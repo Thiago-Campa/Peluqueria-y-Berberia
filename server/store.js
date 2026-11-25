@@ -115,10 +115,43 @@ const CAMPOS_TURNO = `t.id, t.nombre, t.telefono, t.email, t.servicio, t.precio,
 export const ocupados = (fecha) =>
   q(`SELECT peluquero_id AS "peluqueroId", hora, duracion FROM turnos WHERE fecha = $1 AND (estado = 'confirmado' OR vence > now())`, [fecha]);
 
+// Del más viejo al más nuevo: primero por fecha y hora del turno, y si coinciden, el que reservó antes
 export const listarTurnos = () =>
   q(`SELECT ${CAMPOS_TURNO} FROM turnos t JOIN peluqueros p ON p.id = t.peluquero_id
      WHERE t.estado = 'confirmado' OR t.vence > now()
-     ORDER BY t.fecha, t.hora`);
+     ORDER BY t.fecha, t.hora, t.creado, t.id`);
+
+// ---------- turnos del cliente ("Mis turnos") ----------
+// La fecha y la hora se guardan como texto, en la hora del local. Para saber cuánto falta de verdad
+// (aunque el servidor esté en otra zona, como Vercel) se pasan a un instante con la zona horaria del local.
+const ZONA = process.env.ZONA_HORARIA || "America/Argentina/Buenos_Aires";
+// $1 = id del usuario, $2 = zona horaria, $3 = email (para turnos viejos, de antes de que existieran las cuentas)
+const EMPIEZA = `((t.fecha || ' ' || t.hora)::timestamp AT TIME ZONE $2)`;
+const DEL_USUARIO = `(t.usuario_id = $1 OR (t.usuario_id IS NULL AND t.email <> '' AND lower(t.email) = lower($3)))`;
+const CAMPOS_CLIENTE = `t.id, t.servicio, t.precio, t.duracion, t.estado, t.sena, (t.pago_id IS NOT NULL) AS pagado,
+  t.peluquero_id AS "peluqueroId", trim(concat(p.nombre, ' ', p.apellido)) AS peluquero, t.fecha, t.hora,
+  t.creado, t.vence, t.cancelado, t.reembolso, ${EMPIEZA} AS empieza`;
+
+// Confirmados, cancelados y los pendientes de pago que todavía no vencieron. Del más viejo al más nuevo.
+export const turnosDeUsuario = (u) =>
+  q(`SELECT ${CAMPOS_CLIENTE} FROM turnos t JOIN peluqueros p ON p.id = t.peluquero_id
+     WHERE ${DEL_USUARIO} AND (t.estado IN ('confirmado', 'cancelado') OR t.vence > now())
+     ORDER BY empieza, t.creado, t.id`, [u.id, ZONA, u.email]);
+
+// Un turno del cliente, con los minutos que faltan para que empiece (negativo si ya pasó)
+export const turnoDeUsuario = async (id, u) =>
+  (await q(`SELECT ${CAMPOS_CLIENTE}, t.pago_id AS "pagoId", (extract(epoch FROM ${EMPIEZA} - now()) / 60)::float8 AS faltan
+     FROM turnos t JOIN peluqueros p ON p.id = t.peluquero_id
+     WHERE t.id = $4 AND ${DEL_USUARIO}`, [u.id, ZONA, u.email, Number(id) || 0]))[0];
+
+// Lo cancela solo si sigue en el estado que se revisó (si justo cambió, por ejemplo porque entró el pago, no hace nada)
+export const cancelarTurno = async (id, estadoPrevio, reembolso) =>
+  (await q(`UPDATE turnos SET estado = 'cancelado', cancelado = now(), vence = NULL, reembolso = $3
+     WHERE id = $1 AND estado = $2 RETURNING id`, [id, estadoPrevio, reembolso])).length > 0;
+
+// Un pago que llegó para un turno ya cancelado se devuelve: queda anotado para no devolverlo dos veces
+export const marcarReembolso = (id, pagoId) =>
+  q(`UPDATE turnos SET pago_id = $2, reembolso = 'devuelta' WHERE id = $1`, [id, pagoId]);
 
 export const turnoCompleto = async (id) =>
   (await q(`SELECT ${CAMPOS_TURNO} FROM turnos t JOIN peluqueros p ON p.id = t.peluquero_id WHERE t.id = $1`, [Number(id) || 0]))[0];
@@ -159,7 +192,7 @@ export async function reservar({ nombre, telefono, email, usuarioId, servicio, p
 
 // Pasa un turno de "pendiente" a "confirmado" cuando Mercado Pago aprobó el pago.
 // Es seguro llamarlo varias veces (webhook + regreso del cliente): solo confirma una vez.
-// Devuelve { estado }: "confirmado" | "ya" | "inexistente" | "choque" | "monto"
+// Devuelve { estado }: "confirmado" | "ya" | "inexistente" | "choque" | "monto" | "cancelado"
 export async function confirmarPago(id, pagoId, monto) {
   await preparar();
   const [previo] = (await pool.query(`SELECT fecha, peluquero_id FROM turnos WHERE id = $1`, [id])).rows;
@@ -171,6 +204,9 @@ export async function confirmarPago(id, pagoId, monto) {
     const { rows: [t] } = await c.query(`SELECT * FROM turnos WHERE id = $1 FOR UPDATE`, [id]);
     if (!t) { await c.query("ROLLBACK"); return { estado: "inexistente" }; }
     if (t.estado === "confirmado") { await c.query("COMMIT"); return { estado: "ya" }; }
+    // El cliente lo canceló: si es el mismo pago de antes (Mercado Pago reenvía avisos) no se hace nada;
+    // si es un pago nuevo (pagó después de cancelar), se le devuelve
+    if (t.estado === "cancelado") { await c.query("ROLLBACK"); return { estado: t.pago_id === pagoId ? "ya" : "cancelado" }; }
     if (monto < t.sena) { await c.query("ROLLBACK"); return { estado: "monto" }; }
     if (t.vence && t.vence < new Date()) {
       // Pagó tarde: solo se confirma si nadie más tomó el horario mientras tanto

@@ -52,6 +52,9 @@ ALTER TABLE turnos ADD COLUMN IF NOT EXISTS sena int NOT NULL DEFAULT 0;
 ALTER TABLE turnos ADD COLUMN IF NOT EXISTS pago_id text;
 ALTER TABLE turnos ADD COLUMN IF NOT EXISTS vence timestamptz;
 ALTER TABLE config ADD COLUMN IF NOT EXISTS sena int NOT NULL DEFAULT 50;
+ALTER TABLE turnos ADD COLUMN IF NOT EXISTS cancelado timestamptz;
+ALTER TABLE turnos ADD COLUMN IF NOT EXISTS reembolso text;
+CREATE INDEX IF NOT EXISTS turnos_usuario_idx ON turnos (usuario_id);
 CREATE TABLE IF NOT EXISTS codigos (
   email text NOT NULL, tipo text NOT NULL, codigo text NOT NULL, datos jsonb,
   expira timestamptz NOT NULL, intentos int NOT NULL DEFAULT 0, PRIMARY KEY (email, tipo)

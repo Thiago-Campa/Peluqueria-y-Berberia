@@ -1,27 +1,7 @@
 import { useEffect, useState } from "react";
 import { adm, getServicios, getConfig } from "../js/api.js";
 import { peso, fechaCorta } from "../js/format.js";
-
-// Ventana para confirmar antes de borrar, modificar o agregar algo
-function Confirmar({ titulo, texto, boton = "Confirmar", peligro, onResp }) {
-  useEffect(() => {
-    const tecla = (e) => e.key === "Escape" && onResp(false);
-    window.addEventListener("keydown", tecla);
-    return () => window.removeEventListener("keydown", tecla);
-  }, []);
-  return (
-    <div className="modal" role="presentation" onClick={() => onResp(false)}>
-      <div className="modal__caja" role="alertdialog" aria-modal="true" aria-labelledby="conf-t" onClick={(e) => e.stopPropagation()}>
-        <h2 id="conf-t">{titulo}</h2>
-        {texto && <p>{texto}</p>}
-        <div className="modal__acc">
-          <button className="btn btn--sm btn--ghost" autoFocus onClick={() => onResp(false)}>Cancelar</button>
-          <button className={`btn btn--sm${peligro ? " btn--rojo" : ""}`} onClick={() => onResp(true)}>{boton}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { useConfirmar } from "./Confirmar.jsx";
 
 function Cortes({ onCambio, ok, fallo, pedir }) {
   const [lista, setLista] = useState([]);
@@ -263,10 +243,8 @@ export default function Admin({ onCambio }) {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("cortes");
   const [aviso, setAviso] = useState("");
-  const [conf, setConf] = useState(null);
   // pedir({...}) abre la ventana de confirmación y devuelve true o false
-  const pedir = (datos) => new Promise((res) => setConf({ ...datos, res }));
-  const responder = (v) => { conf.res(v); setConf(null); };
+  const [pedir, ventana] = useConfirmar();
 
   const salir = () => { sessionStorage.removeItem("adm"); setDentro(false); };
   const ok = (t) => { setAviso(t); setTimeout(() => setAviso(""), 2200); };
@@ -312,7 +290,7 @@ export default function Admin({ onCambio }) {
       {tab === "barberos" && <Barberos fallo={fallo} />}
       {tab === "datos" && <Datos onCambio={onCambio} ok={ok} fallo={fallo} pedir={pedir} />}
       {tab === "turnos" && <TurnosAdmin ok={ok} fallo={fallo} pedir={pedir} />}
-      {conf && <Confirmar {...conf} onResp={responder} />}
+      {ventana}
       {aviso && <div className="toast" role="status">{aviso}</div>}
     </main>
   );

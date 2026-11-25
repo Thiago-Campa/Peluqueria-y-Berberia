@@ -28,6 +28,15 @@ Para probar sin plata real, usá las credenciales de prueba y usuarios de prueba
 El turno queda "pendiente" 15 minutos hasta que se paga; si no paga, el horario se libera solo.
 En tu compu el aviso automático (webhook) no llega, pero al volver de Mercado Pago el sitio confirma el pago igual.
 
+## 1d. Mis turnos y cancelaciones
+Con la sesión iniciada, el cliente ve la sección **Mis turnos** (también en el menú) con sus reservas ordenadas del turno más cercano al más lejano, cuánto falta para cada una y si todavía puede recuperar la seña.
+- Si cancela con **1 hora o más** de anticipación, la seña se le devuelve sola por Mercado Pago.
+- Si falta **menos de 1 hora**, puede cancelar igual, pero la seña no se devuelve (antes se le pregunta de nuevo).
+- Un turno que ya empezó no se puede cancelar.
+- Los cancelados quedan en el **Historial** del cliente y el horario se libera para otra persona.
+
+Para calcular cuánto falta se usa la hora de Argentina. Si el local está en otra zona, cargá `ZONA_HORARIA` (ej. `America/Montevideo`). Las horas de anticipación se cambian en `ANTICIPO_MIN`, al principio de `server/app.js`.
+
 ## 2. Correrlo en tu compu (2 terminales)
 ```bash
 npm install

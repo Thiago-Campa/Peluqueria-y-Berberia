@@ -15,6 +15,18 @@ export const generarSlots = (bloque, paso = 30) => {
   return slots;
 };
 
+// "Faltan 3 días", "Faltan 5 h 20 min", "Faltan 12 min"
+export const cuantoFalta = (ms) => {
+  const min = Math.max(1, Math.ceil(ms / 60000));
+  if (min >= 2 * 1440) return `Faltan ${Math.floor(min / 1440)} días`;
+  if (min >= 1440) { const h = Math.floor((min % 1440) / 60); return h ? `Falta 1 día y ${h} h` : "Falta 1 día"; }
+  if (min >= 60) return `Faltan ${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
+  return min === 1 ? "Falta 1 minuto" : `Faltan ${min} min`;
+};
+
+// 60 → "una hora", 120 → "2 horas", 45 → "45 minutos"
+export const anticipoTexto = (min) => (min === 60 ? "una hora" : min % 60 === 0 ? `${min / 60} horas` : `${min} minutos`);
+
 export const horarioTexto = (bloques) => bloques.map((b) => `de ${b.desde} a ${b.hasta}`).join(" y ");
 
 // Dice si la peluquería está abierta en este momento

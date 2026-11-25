@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import Header from "./components/Header.jsx";
 import Servicios from "./components/Servicios.jsx";
 import Turnos from "./components/Turnos.jsx";
+import MisTurnos from "./components/MisTurnos.jsx";
 import Contacto from "./components/Contacto.jsx";
 import Footer from "./components/Footer.jsx";
 import Admin from "./components/Admin.jsx";
-import Acceso from "./components/Acceso.jsx";
 import { getServicios, getConfig, leerSesion, borrarSesion, verificarSesion } from "./js/api.js";
 import { NEGOCIO } from "./js/config.js";
+import { quitarCarga } from "./js/carga.js";
 
 const esAdmin = () => window.location.hash === "#/admin";
 
@@ -18,6 +19,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [admin, setAdmin] = useState(esAdmin());
   const [sesion, setSesion] = useState(leerSesion());
+  const [reservas, setReservas] = useState(0); // sube cada vez que se reserva, para actualizar "Mis turnos"
 
   const salir = () => { borrarSesion(); setSesion(null); };
 
@@ -32,7 +34,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    cargar();
+    cargar().finally(quitarCarga); // la pantalla de carga se va cuando llegan los precios y los datos del local
     const alCambiar = () => setAdmin(esAdmin());
     window.addEventListener("hashchange", alCambiar);
     return () => window.removeEventListener("hashchange", alCambiar);
@@ -55,7 +57,9 @@ export default function App() {
       <Header n={cfg} servicios={servicios} sesion={sesion} onSalir={salir} />
       <main>
         <Servicios servicios={servicios} error={error} onReservar={reservar} />
-        <Turnos n={cfg} servicios={servicios} elegido={elegido} setElegido={setElegido} sesion={sesion} onSesion={setSesion} onSalir={salir} />
+        <Turnos n={cfg} servicios={servicios} elegido={elegido} setElegido={setElegido} sesion={sesion} onSesion={setSesion} onSalir={salir}
+          onReservado={() => setReservas((v) => v + 1)} />
+        {sesion && <MisTurnos n={cfg} sesion={sesion} version={reservas} onSalir={salir} />}
         <Contacto n={cfg} />
       </main>
       <div className="checker" aria-hidden="true" />

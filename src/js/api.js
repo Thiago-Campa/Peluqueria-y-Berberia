@@ -1,6 +1,6 @@
 export const resolver = async (res) => {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.mensaje || "Error del servidor"), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(data.mensaje || "Error del servidor"), { status: res.status, codigo: data.codigo });
   return data;
 };
 
@@ -28,6 +28,8 @@ export const confirmarPago = (paymentId, token) => enviar("pago/confirmar", { pa
 export const ingresar = (datos) => enviar("login", datos);
 export const verificarSesion = (token) => fetch("/api/yo", { headers: { Authorization: `Bearer ${token}` } }).then(resolver);
 export const crearTurno = (datos, token) => enviar("turnos", datos, token);
+export const getMisTurnos = (token) => fetch("/api/mis-turnos", { headers: { Authorization: `Bearer ${token}` } }).then(resolver);
+export const cancelarMiTurno = (id, datos, token) => enviar(`mis-turnos/${id}/cancelar`, datos, token);
 
 // Llamadas del panel admin (llevan el token de la sesión)
 export const adm = (ruta, metodo = "GET", body) =>

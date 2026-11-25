@@ -8,6 +8,10 @@ import * as mp from "./mercadopago.js";
 
 const app = express();
 const DIAS_CERRADOS = [0]; // domingo
+// Cancelando con al menos esta anticipación (en minutos) se devuelve la seña.
+// Con menos, el cliente puede cancelar igual, pero la seña queda para el local.
+const ANTICIPO_MIN = 60;
+const pesos = (n) => Number(n).toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
 // En Vercel no hay contraseña por defecto: hay que cargar ADMIN_PASSWORD en las variables
 const PASS = process.env.ADMIN_PASSWORD || (process.env.VERCEL ? null : "admin1234");
@@ -159,7 +163,7 @@ app.get("/api/yo", authU, (req, res) => res.json(req.usuario));
 
 // ---------- público ----------
 app.get("/api/servicios", async (_req, res) => res.json(await db.getServicios()));
-app.get("/api/config", async (_req, res) => res.json({ ...(await db.getConfig()), pagos: mp.mpConfigurado() }));
+app.get("/api/config", async (_req, res) => res.json({ ...(await db.getConfig()), pagos: mp.mpConfigurado(), anticipo: ANTICIPO_MIN }));
 app.get("/api/turnos/ocupados", async (req, res) => res.json(await db.ocupados(String(req.query.fecha || ""))));
 
 app.post("/api/turnos", authU, async (req, res) => {
@@ -228,9 +232,14 @@ async function procesarPago(paymentId) {
   if (pago.status !== "approved") return { estado: pago.status, turnoId };
 
   const r = await db.confirmarPago(turnoId, String(pago.id), Number(pago.transaction_amount));
-  if (r.estado === "choque" || r.estado === "inexistente") {
-    // Pagó pero el horario ya no está: se le devuelve la plata
-    await mp.reembolsar(pago.id).catch((e) => console.error(`No se pudo reembolsar el pago ${pago.id}:`, e.message));
+  if (r.estado === "choque" || r.estado === "inexistente" || r.estado === "cancelado") {
+    // Pagó pero el horario ya no está (o el cliente canceló antes de que entrara el pago): se le devuelve la plata
+    try {
+      await mp.reembolsar(pago.id);
+      if (r.estado === "cancelado") await db.marcarReembolso(turnoId, String(pago.id));
+    } catch (e) {
+      console.error(`No se pudo reembolsar el pago ${pago.id}:`, e.message);
+    }
   }
   if (r.estado === "monto") console.error(`El pago ${pago.id} es menor a la seña del turno ${turnoId}: no se confirmó.`);
   return { ...r, turnoId };
@@ -259,11 +268,66 @@ app.post("/api/pago/confirmar", authU, async (req, res) => {
   const t = r.turnoId && (await db.turnoCompleto(r.turnoId));
   if (!t || t.email.toLowerCase() !== req.usuario.email.toLowerCase())
     return res.status(404).json({ mensaje: "No encontramos ese pago entre tus turnos." });
+  if (t.estado === "cancelado")
+    return res.status(409).json({ mensaje: `Ese turno está cancelado.${r.estado === "cancelado" ? " Te devolvemos la seña a Mercado Pago." : ""}` });
   if (r.estado === "confirmado") return res.json(await entregarTurno(t.id, true));
   if (r.estado === "ya") return res.json({ ...t, correo: true });
   if (r.estado === "choque" || r.estado === "inexistente")
     return res.status(409).json({ mensaje: "Tu pago llegó cuando el horario ya no estaba disponible. Te devolvemos la seña a Mercado Pago. Elegí otro horario." });
   res.status(402).json({ mensaje: "Mercado Pago todavía no confirmó el pago. Si ya pagaste, en unos minutos te llega el correo con tu turno." });
+});
+
+// ---------- mis turnos: el cliente ve sus reservas y puede cancelarlas ----------
+// `ahora` va para que la página calcule cuánto falta con la hora del servidor, aunque el reloj del celular esté mal
+app.get("/api/mis-turnos", authU, async (req, res) =>
+  res.json({ ahora: Date.now(), anticipo: ANTICIPO_MIN, turnos: await db.turnosDeUsuario(req.usuario) }));
+
+const AVISO_CANCELADO = {
+  devuelta: (t) => `Turno cancelado. Te devolvimos la seña de ${pesos(t.sena)} a Mercado Pago (según tu medio de pago, puede tardar unos días en verse).`,
+  retenida: (t) => `Turno cancelado. Como faltaba menos de una hora, la seña de ${pesos(t.sena)} no se devuelve.`,
+  manual: (t) => `Turno cancelado. El local te va a devolver la seña de ${pesos(t.sena)}.`,
+  "sin-sena": () => "Turno cancelado. El horario quedó libre.",
+};
+
+app.post("/api/mis-turnos/:id/cancelar", authU, async (req, res) => {
+  const t = await db.turnoDeUsuario(req.params.id, req.usuario);
+  if (!t) return res.status(404).json({ mensaje: "No encontramos ese turno entre los tuyos." });
+  if (t.estado === "cancelado") return res.status(409).json({ mensaje: "Ese turno ya estaba cancelado." });
+  if (t.estado === "pendiente" && !(t.vence > new Date()))
+    return res.status(409).json({ mensaje: "Ese turno ya no está reservado: la seña no se pagó a tiempo y el horario se liberó." });
+  if (t.faltan <= 0) return res.status(400).json({ mensaje: "Ese turno ya empezó o ya pasó, así que no se puede cancelar." });
+
+  const pagada = t.estado === "confirmado" && t.sena > 0 && !!t.pagoId;
+  const conTiempo = t.faltan >= ANTICIPO_MIN;
+
+  // Con menos de una hora la seña no se devuelve: se cancela solo si el cliente confirmó que lo sabe
+  if (pagada && !conTiempo && req.body?.aceptoSinReembolso !== true)
+    return res.status(409).json({
+      codigo: "sin-reembolso",
+      mensaje: `Falta menos de una hora para tu turno: si lo cancelás ahora, la seña de ${pesos(t.sena)} no se devuelve.`,
+    });
+
+  let reembolso = "sin-sena";
+  if (pagada && !conTiempo) reembolso = "retenida";
+  if (pagada && conTiempo) {
+    if (!mp.mpConfigurado()) reembolso = "manual";
+    else {
+      // Primero se devuelve la plata y después se cancela: si Mercado Pago falla, el turno sigue reservado y se puede reintentar
+      try {
+        await mp.reembolsar(t.pagoId);
+        reembolso = "devuelta";
+      } catch (e) {
+        console.error(`No se pudo devolver la seña del turno ${t.id} (pago ${t.pagoId}):`, e.message);
+        return res.status(502).json({ mensaje: "No pudimos devolverte la seña en este momento, así que tu turno sigue reservado. Probá de nuevo en unos minutos." });
+      }
+    }
+  }
+
+  if (!(await db.cancelarTurno(t.id, t.estado, reembolso)))
+    return res.status(409).json({ mensaje: "Tu turno cambió mientras lo cancelabas. Actualizá la página y probá de nuevo." });
+
+  const { pagoId, faltan, ...turno } = (await db.turnoDeUsuario(t.id, req.usuario)) || { id: t.id };
+  res.json({ turno, mensaje: AVISO_CANCELADO[reembolso](t) });
 });
 
 // ---------- admin: cortes ----------

@@ -11,6 +11,7 @@ export default function Header({ n, servicios, sesion, onSalir }) {
         <div className="nav__links">
           <a href="#servicios">Precios</a>
           <a href="#turnos">Turnos</a>
+          {sesion && <a href="#mis-turnos">Mis turnos</a>}
           <a href="#contacto">Contacto</a>
           {sesion && (
             <span className="nav__user">

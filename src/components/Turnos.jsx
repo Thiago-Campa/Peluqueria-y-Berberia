@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { crearTurno, getOcupados, confirmarPago } from "../js/api.js";
 import Acceso from "./Acceso.jsx";
-import { peso, fechaCorta, aMin, generarSlots, nombreCompleto } from "../js/format.js";
+import Tijera from "./Tijera.jsx";
+import { peso, fechaCorta, aMin, generarSlots, nombreCompleto, anticipoTexto } from "../js/format.js";
 
 const hoy = () => new Date().toLocaleDateString("en-CA"); // AAAA-MM-DD en hora local
 const vacio = { fecha: "", hora: "", peluqueroId: "" };
@@ -25,12 +26,16 @@ function Ticket({ n, servicio, duracion, peluquero, fecha, hora, precio, sello, 
   );
 }
 
-export default function Turnos({ n, servicios, elegido, setElegido, sesion, onSesion, onSalir }) {
+export default function Turnos({ n, servicios, elegido, setElegido, sesion, onSesion, onSalir, onReservado }) {
   const [form, setForm] = useState(vacio);
   const [ocupados, setOcupados] = useState([]);
   const [aviso, setAviso] = useState(null);
   const [turno, setTurno] = useState(null);
   const [yendo, setYendo] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+
+  // Cada turno nuevo aparece enseguida en "Mis turnos"
+  useEffect(() => { if (turno) onReservado?.(); }, [turno]);
 
   const servicio = servicios.find((s) => s.id === elegido);
   const pelu = n.peluqueros.find((p) => p.id === form.peluqueroId);
@@ -86,6 +91,7 @@ export default function Turnos({ n, servicios, elegido, setElegido, sesion, onSe
     e.preventDefault();
     if (!servicio || !pelu || !form.hora)
       return setAviso({ tipo: "error", texto: "Elegí servicio, peluquero, fecha y horario." });
+    setEnviando(true);
     try {
       const r = await crearTurno({ ...form, servicioId: servicio.id }, sesion.token);
       if (r.pagoUrl) { // hay seña: se sigue en Mercado Pago
@@ -102,6 +108,8 @@ export default function Turnos({ n, servicios, elegido, setElegido, sesion, onSe
       setAviso({ tipo: "error", texto: err.message });
       setForm((f) => ({ ...f, hora: "" }));
       cargar(form.fecha);
+    } finally {
+      setEnviando(false);
     }
   };
 
@@ -119,8 +127,13 @@ export default function Turnos({ n, servicios, elegido, setElegido, sesion, onSe
                 ? `Te enviamos la confirmación a ${turno.email}. Si no la ves, revisá la carpeta de spam.`
                 : "Tu turno quedó reservado, pero no pudimos enviarte el correo de confirmación. Guardá este ticket."}
             </p>
+            <p className="nota">
+              Lo podés ver y cancelar cuando quieras desde <a href="#mis-turnos">Mis turnos</a>.
+              {turno.sena > 0 && ` Si cancelás con al menos ${anticipoTexto(n.anticipo || 60)} de anticipación, te devolvemos la seña.`}
+            </p>
             <div className="acciones">
-              <a className="btn" href={`https://wa.me/${n.whatsapp}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">Avisar por WhatsApp</a>
+              <a className="btn" href="#mis-turnos">Ver mis turnos</a>
+              <a className="btn btn--ghost" href={`https://wa.me/${n.whatsapp}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">Avisar por WhatsApp</a>
               <button className="btn btn--ghost" onClick={() => setTurno(null)}>Reservar otro turno</button>
             </div>
           </div>
@@ -201,7 +214,9 @@ export default function Turnos({ n, servicios, elegido, setElegido, sesion, onSe
             </div>
 
             {aviso && <p className={`aviso aviso--${aviso.tipo} full`}>{aviso.texto}</p>}
-            <button className="btn full" disabled={yendo}>{yendo ? "Abriendo Mercado Pago…" : senaAhora ? `Pagar seña de ${peso(senaAhora)} y reservar` : "Confirmar turno"}</button>
+            <button className="btn full btn--carga" disabled={yendo || enviando}>
+              {yendo ? <><Tijera /> Abriendo Mercado Pago…</> : enviando ? <><Tijera /> Reservando tu turno…</> : senaAhora ? `Pagar seña de ${peso(senaAhora)} y reservar` : "Confirmar turno"}
+            </button>
           </form>
           )}
           <Ticket n={n} servicio={servicio?.nombre} duracion={servicio?.duracion} peluquero={pelu && nombreCompleto(pelu)} fecha={form.fecha} hora={form.hora} precio={servicio?.precio} sena={senaAhora} />
