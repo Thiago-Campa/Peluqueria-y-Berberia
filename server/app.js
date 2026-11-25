@@ -3,7 +3,7 @@ import cors from "cors";
 import { createHmac, timingSafeEqual, randomInt } from "node:crypto";
 import * as db from "./store.js";
 import { hashClave, claveOk } from "./seguridad.js";
-import { enviarCorreo, correoReserva, correoCodigo, correoConfigurado } from "./correo.js";
+import { enviarCorreo, correoReserva, correoCodigo, correoConfigurado, diagnostico } from "./correo.js";
 import * as mp from "./mercadopago.js";
 
 const app = express();
@@ -72,7 +72,7 @@ const authU = async (req, res, next) => {
   req.usuario = usuario;
   next();
 };
-const esEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
+const esEmail = (e) => e.length <= 120 && /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(e);
 
 const codigoHash = (email, codigo) => createHmac("sha256", SECRET).update(`c:${email}:${codigo}`).digest("hex");
 const sesionDe = (usuario) => ({ token: crearTokenU(usuario.id), usuario });
@@ -323,12 +323,12 @@ app.post("/api/admin/correo-prueba", auth, async (_req, res) => {
   if (!correoConfigurado()) return res.json({ ok: false, detalle: "Faltan MAIL_USER y MAIL_PASS en el .env (o en las variables de Vercel). Después de cargarlos, reiniciá el servidor." });
   const cfg = await db.getConfig();
   const r = await enviarCorreo({
-    para: process.env.MAIL_USER,
+    para: diagnostico().usuario,
     asunto: `Prueba de correo de ${cfg.nombre}`,
     texto: "Si recibiste este mensaje, el correo de confirmación de turnos está funcionando.",
     html: "<p>Si recibiste este mensaje, el correo de confirmación de turnos está <strong>funcionando</strong>.</p>",
   });
-  res.json({ ...r, para: process.env.MAIL_USER });
+  res.json({ ...r, para: diagnostico().usuario, ...diagnostico() });
 });
 
 // ---------- admin: turnos ----------

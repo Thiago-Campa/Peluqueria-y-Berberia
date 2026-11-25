@@ -226,7 +226,7 @@ function Datos({ onCambio, ok, fallo, pedir }) {
       <button className="btn">Guardar datos</button>
       <div className="a-prueba">
         <button type="button" className="btn btn--sm btn--ghost" onClick={probarCorreo}>Enviar correo de prueba</button>
-        {prueba && <p className={`aviso aviso--${prueba.ok ? "ok" : "error"}`}>{prueba.ok ? `Listo: mandamos un correo a ${prueba.para}. Revisá la bandeja de entrada y el spam.` : prueba.detalle}</p>}
+        {prueba && <p className={`aviso aviso--${prueba.ok ? "ok" : "error"}`}>{prueba.ok ? `Listo: mandamos un correo a ${prueba.para}. Revisá la bandeja de entrada y el spam.` : prueba.detalle}{!prueba.ok && prueba.usuario ? ` (El servidor lee: usuario «${prueba.usuario}» y una contraseña de ${prueba.largoClave} caracteres; tiene que ser de 16.)` : ""}</p>}
       </div>
     </form>
   );

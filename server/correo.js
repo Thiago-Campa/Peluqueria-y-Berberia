@@ -4,7 +4,13 @@ const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const fecha = (iso) => iso.split("-").reverse().join("/");
 const peso = (n) => Number(n).toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
-export const correoConfigurado = () => !!(process.env.MAIL_USER && process.env.MAIL_PASS);
+// La contraseña de aplicación de Google se muestra con espacios (abcd efgh ...): se los sacamos solos
+const usuario = () => (process.env.MAIL_USER || "").trim();
+const clave = () => (process.env.MAIL_PASS || "").replace(/\s+/g, "");
+export const correoConfigurado = () => !!(usuario() && clave());
+// Para el botón de prueba del admin: qué está leyendo el servidor (sin mostrar la contraseña)
+export const diagnostico = () => ({ usuario: usuario(), largoClave: clave().length });
+const esEjemplo = () => /tu_correo|tucorreo|tu_contrase/i.test(usuario() + clave());
 
 // Traduce el error técnico a algo que se pueda entender y arreglar
 const explicar = (e) => {
@@ -21,7 +27,7 @@ async function getTransporte() {
   const { default: nodemailer } = await import("nodemailer");
   transporte = nodemailer.createTransport({
     service: "gmail",
-    auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+    auth: { user: usuario(), pass: clave() },
   });
   return transporte;
 }
@@ -32,9 +38,10 @@ export async function enviarCorreo({ para, asunto, texto, html }) {
     console.warn("Correo no configurado (faltan MAIL_USER y MAIL_PASS): no se envió el mail.");
     return { ok: false, motivo: "no-config", detalle: "Faltan MAIL_USER y MAIL_PASS en el .env (o en las variables de Vercel). Después de cargarlos, reiniciá el servidor." };
   }
+  if (esEjemplo()) return { ok: false, motivo: "ejemplo", detalle: "El .env todavía tiene los datos de ejemplo (tu_correo@gmail.com / tu_contraseña_de_aplicacion). Reemplazalos por tu Gmail real y tu contraseña de aplicación, guardá y reiniciá el servidor." };
   try {
     const t = await getTransporte();
-    await t.sendMail({ from: `"${process.env.MAIL_NOMBRE || "Turnos"}" <${process.env.MAIL_USER}>`, to: para, subject: asunto, text: texto, html });
+    await t.sendMail({ from: `"${process.env.MAIL_NOMBRE || "Turnos"}" <${usuario()}>`, to: para, subject: asunto, text: texto, html });
     return { ok: true };
   } catch (e) {
     transporte = undefined; // la próxima vez se vuelve a armar la conexión

@@ -117,8 +117,8 @@ h1,h2,h3,.brand,.precio,.sello-precio,.ticket__marca,.sello{font-family:"Bricola
 .ticket__corte::after{right:-33px}
 .ticket__total{display:flex;justify-content:space-between;align-items:baseline}
 .ticket__total strong{font-family:"Bricolage Grotesque",sans-serif;font-size:1.7rem}
-.sello{position:absolute;right:14px;top:64px;border:4px solid var(--red);color:var(--red);font-weight:800;font-size:1.5rem;letter-spacing:.06em;padding:4px 12px;border-radius:8px;transform:rotate(-14deg);background:#ffffffd9;animation:sellar .5s .25s cubic-bezier(.3,1.6,.5,1) both}
-@keyframes sellar{from{opacity:0;transform:rotate(-14deg) scale(2.4)}to{opacity:1;transform:rotate(-14deg) scale(1)}}
+.sello{display:block;width:max-content;margin:18px auto 0;border:4px solid var(--red);color:var(--red);font-weight:800;font-size:1.5rem;letter-spacing:.06em;padding:4px 12px;border-radius:8px;transform:rotate(-6deg);animation:sellar .5s .25s cubic-bezier(.3,1.6,.5,1) both}
+@keyframes sellar{from{opacity:0;transform:rotate(-6deg) scale(2.4)}to{opacity:1;transform:rotate(-6deg) scale(1)}}
 
 /* Contacto y footer */
 .contacto{display:grid;grid-template-columns:1fr 1.3fr;gap:32px}
