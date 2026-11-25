@@ -1,5 +1,7 @@
 // Envío de correos con nodemailer + Gmail (contraseña de aplicación).
 // Variables: MAIL_USER (tu Gmail) y MAIL_PASS (contraseña de aplicación de 16 letras).
+import { LOGO } from "./logo.js";
+
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const fecha = (iso) => iso.split("-").reverse().join("/");
 const peso = (n) => Number(n).toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
@@ -41,7 +43,8 @@ export async function enviarCorreo({ para, asunto, texto, html }) {
   if (esEjemplo()) return { ok: false, motivo: "ejemplo", detalle: "El .env todavía tiene los datos de ejemplo (tu_correo@gmail.com / tu_contraseña_de_aplicacion). Reemplazalos por tu Gmail real y tu contraseña de aplicación, guardá y reiniciá el servidor." };
   try {
     const t = await getTransporte();
-    await t.sendMail({ from: `"${process.env.MAIL_NOMBRE || "Turnos"}" <${usuario()}>`, to: para, subject: asunto, text: texto, html });
+    await t.sendMail({ from: `"${process.env.MAIL_NOMBRE || "Turnos"}" <${usuario()}>`, to: para, subject: asunto, text: texto, html,
+      attachments: html?.includes("cid:logo-peluqueria") ? [{ filename: "logo.jpg", content: LOGO, cid: "logo-peluqueria", contentDisposition: "inline" }] : [] });
     return { ok: true };
   } catch (e) {
     transporte = undefined; // la próxima vez se vuelve a armar la conexión
@@ -50,7 +53,10 @@ export async function enviarCorreo({ para, asunto, texto, html }) {
   }
 }
 
-const marco = (cfg, cuerpo) => `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1b2333">
+// El logo va incrustado en el correo (adjunto "inline"), así se ve siempre y no depende de ninguna dirección web
+const marco = (cfg, cuerpo) =>
+  `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1b2333">
+  <img src="cid:logo-peluqueria" alt="${esc(cfg.nombre)}" width="120" height="120" style="display:block;margin:0 0 12px">
   <h2 style="margin:0 0 8px">${esc(cfg.nombre)}</h2>${cuerpo}</div>`;
 
 export function correoReserva({ turno, cfg, nombrePelu }) {
